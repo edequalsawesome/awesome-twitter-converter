@@ -1,21 +1,46 @@
 #!/bin/bash
-# Sequential year-by-year import into Studio site. Handles the
-# SinglePHPInstanceManager constraint by polling a cheap WP-CLI call
-# between imports until the lock releases before firing the next one.
+# Sequential year-by-year import into a WordPress Studio site.
 #
-# Usage: bash scripts/rollout.sh <space-separated years>
+# Handles Studio's SinglePHPInstanceManager constraint by polling a cheap
+# WP-CLI call between imports until the lock releases before firing the
+# next one.
+#
+# Usage:
+#   bash scripts/rollout.sh <year> [<year> ...]
+#
+# Configurable via env vars (all have reasonable defaults except SITE_DIR):
+#
+#   SITE_DIR         Studio site directory         (required; e.g. ~/Studio/mysite)
+#   SITE_URL         Studio site URL               (default: http://localhost:8881)
+#   CONVERTER_DIR    Path to this repo             (default: dir of this script's parent)
+#   ARCHIVE          Path to the extracted archive (default: $CONVERTER_DIR/.archives/latest)
+#   SKIP_IDS         File of tweet IDs to exclude  (default: $CONVERTER_DIR/.archives/skip-ids.txt)
+#   AUTHOR           WP author login               (default: admin)
+#   CATEGORY         WP category for posts         (default: Twitter)
+#   MEDIA_BASE       Base URL for media in WXR     (default: $SITE_URL/wp-content/uploads/twitter-import/)
+#
+# Example:
+#   SITE_DIR=~/Studio/mysite SITE_URL=http://localhost:8884 AUTHOR=myuser \
+#     ARCHIVE=/path/to/extracted-archive \
+#     bash scripts/rollout.sh 2019 2020 2021
 
 set -euo pipefail
 
-CONVERTER_DIR="/Users/edequalsawesome/Development/awesome-twitter-converter"
-ARCHIVE="$CONVERTER_DIR/.archives/2026-04-16"
-SKIP_IDS="$CONVERTER_DIR/.archives/skip-ids.txt"
-SITE_DIR="$HOME/Studio/edequalsawesome"
-SITE_URL="http://localhost:8884"
-MEDIA_BASE="http://localhost:8884/wp-content/uploads/twitter-import/"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONVERTER_DIR="${CONVERTER_DIR:-$(dirname "$SCRIPT_DIR")}"
+SITE_DIR="${SITE_DIR:?SITE_DIR env var is required (path to ~/Studio/<site>)}"
+SITE_URL="${SITE_URL:-http://localhost:8881}"
+ARCHIVE="${ARCHIVE:-$CONVERTER_DIR/.archives/latest}"
+SKIP_IDS="${SKIP_IDS:-$CONVERTER_DIR/.archives/skip-ids.txt}"
+AUTHOR="${AUTHOR:-admin}"
+CATEGORY="${CATEGORY:-Twitter}"
+MEDIA_BASE="${MEDIA_BASE:-$SITE_URL/wp-content/uploads/twitter-import/}"
 
 if [ $# -eq 0 ]; then
   echo "Usage: $0 <year> [<year> ...]"
+  echo ""
+  echo "Required env: SITE_DIR"
+  echo "Optional env: SITE_URL, CONVERTER_DIR, ARCHIVE, SKIP_IDS, AUTHOR, CATEGORY, MEDIA_BASE"
   exit 1
 fi
 
@@ -34,6 +59,11 @@ wait_for_lock() {
 
 cd "$CONVERTER_DIR"
 
+SKIP_ARGS=()
+if [ -f "$SKIP_IDS" ]; then
+  SKIP_ARGS=(--skip-ids "$SKIP_IDS")
+fi
+
 for YEAR in "$@"; do
   echo ""
   echo "════════════════════════════════════════════════════════════"
@@ -44,10 +74,11 @@ for YEAR in "$@"; do
 
   node index.js "$ARCHIVE" \
     --year "$YEAR" \
-    --skip-ids "$SKIP_IDS" \
+    "${SKIP_ARGS[@]}" \
     --output "$WXR" \
     --site-url "$SITE_URL" \
-    --author edequalsawesome \
+    --author "$AUTHOR" \
+    --category "$CATEGORY" \
     --media-base-url "$MEDIA_BASE" \
     2>&1 | tail -12
 
