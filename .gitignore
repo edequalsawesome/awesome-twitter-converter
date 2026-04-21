@@ -1,0 +1,5 @@
+node_modules/
+*.xml
+.DS_Store
+.archives/
+.studio-credentials.local
